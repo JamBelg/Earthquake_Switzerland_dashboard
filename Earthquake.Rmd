@@ -1,0 +1,96 @@
+---
+title: "Earthquake in Switzerland"
+author: "Jamel Belgacem"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: scroll
+    social: menu
+    source: embed
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(rvest)
+# library(XML)
+library(dplyr)
+library(RCurl)
+# library(ggplot2)
+library(RColorBrewer)
+library(leaflet)
+library(DT)
+library(plotly)
+```
+
+```{r data_scrap, cache=TRUE}
+data <- NA
+for(i in 1:5){
+
+    data_i <- read_html(paste0("http://www.seismo.ethz.ch/de/earthquakes/switzerland/all-earthquakes/?tableA.Lokalzeit.filterOnlyNull=f&tableA.UTC-Zeit.filterOnlyNull=f&tableA.Magnitude.filterOnlyNull=f&tableA.Ort.filterOnlyNull=f&tableA.Tiefe.filterOnlyNull=f&tableA.Breite.filterOnlyNull=f&tableA.L%C3%A4nge.filterOnlyNull=f&tableA.Ereignis-Typ.filterOnlyNull=f&tableA.Auswertung.filterOnlyNull=f&tableA.Dienst.filterOnlyNull=f&tableA.page=",i,"&tableA.records=1000#tableA-anchor")) %>%
+      html_element("tbody") %>%
+      html_table() %>%
+      as_tibble()
+    
+    data <- rbind(data,data_i)
+    
+}
+colnames(data) <- c("Local_Time","UTC_Time","Magnitude","Location","Depth","Latitude","Longitude","Event type","Assessment","Agency")
+
+data$Local_Time <- as.POSIXct(data$Local_Time, tz="", format="%Y-%m-%d %H:%M")
+data$UTC_Time <- as.POSIXct(data$UTC_Time, tz="UTC", format="%Y-%m-%d %H:%M")
+```
+
+
+Column {data-width=650}
+-----------------------------------------------------------------------
+
+### Map
+
+```{r fig.height=8, fig.width=6}
+
+data <- data %>%
+  filter(Magnitude>0)
+
+# pal <- colorNumeric(palette= "Reds",domain=data$Magnitude)
+pal <- colorNumeric(palette= brewer.pal(9,"Reds")[3:9], domain=data$Magnitude)
+
+
+leaflet(data) %>% addTiles() %>%
+  fitBounds(lng1=~min(Longitude),lat1=~min(Latitude),
+            lng2=~max(Longitude),lat2=~max(Latitude)) %>%
+  addCircles(radius= ~9^Magnitude+2500, weight=1, color=~pal(Magnitude),
+             fillColor=~pal(Magnitude),fillOpacity = 0.7,
+             popup=~paste("Date:",ifelse(is.na(Local_Time),format(UTC_Time,"%Y-%m-%d"),format(Local_Time,"%Y-%m-%d")),
+                          " / Location: ",Location,
+                          " / Magnitude: ",Magnitude)) %>%
+  addLegend(position="bottomright",pal=pal,values=~Magnitude)
+```
+
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### Data
+
+```{r fig.height=4, fig.width=3}
+data %>%
+  filter(Magnitude>0)%>%
+  select(Local_Time,Location,Magnitude) %>%
+  as.data.frame() %>%
+  rename(Time= Local_Time) %>%
+  DT::datatable(,options=list(pageLength=10))
+```
+
+
+### Magnitude distribution
+```{r fig.height=4, fig.width=3}
+data %>%
+  plot_ly(x=~Magnitude, type="histogram")
+```
+
+
+> This application is using data from [Swiss Seismological Service]("http://seismo.ethz.ch/en/home/").</br>
+> Data are from `r as.Date(data$Local_Time[nrow(data)])` to `r as.Date(data$Local_Time[1])`.</br>
+
+
+
